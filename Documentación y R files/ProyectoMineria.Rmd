@@ -1,0 +1,401 @@
+---
+title: "Proyecto Minería"
+author: "Jose Benavides & Elías Sánchez"
+date: "4 de diciembre de 2016"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Análisis del Problema
+Los sistemas modernos de manufactura y producción en general buscan siempre optimizar los recursos y obtener las mayores ganancias en los negocios. Poder determinar los procesos y productos en los cuales se puede incrementar esa ganancia es de suma importancia para las empresas.
+
+En los procesos de producción y venta se ven involucrados una gran cantidad de elementos. Definir y conocer cuales son las relaciones de todos esos elementos puede ayudar a optimizar los recursos e inferir cuales son la condiciones de producción y venta con mayores ingresos económicos.
+
+## Entendimiento de los Datos
+
+Con el fin de analizar y tratar de estimar el valor y las variaciones en los precios,  de acuerdo con los costos de producción, las cantidades producidas, los días de manufactura, el peso del producto y por su categoría se trabajó con un conjunto de datos que contiene 149143 observaciones y 9 variables:
+- ProductID(identificador del producto): entero desde 717 hasta 999
+- TransactionID(identificador de la transaction): entero desde 100000 hasta 182514
+- WorkOrderID(identificador de la orden): entero desde 417 hasta 69026
+- StandatCost (costo estándar): numérica, con un rango de 17.98 a 1554.95
+- ProductWeigt (peso): numérica, con un rango de 0 a 1050.00
+- ProductSubcategoryID(Subcategoría): cualitativa; con 17 valores diferentes entre  1 hasta 17 con el orden correspondiente Mountain Bikes,Road Bikes, Touring Bikes, Handlebars, Bottom Brackets, Brakes, Chains, Cranksets, Derailleurs, Forks, Headsets, Mountain Frames, Pedals, Road Frames, Saddles, Touring Frames, Wheels
+- DaysToManufacture (días para manufacturarlo): entera, con un rango de 1 a 4
+- ListPrice (precio): numérica, con un rango de 40.49 a 2443.35 
+- OrderQty (cantidad): entera, con un rango de 1 a 3864
+## Exploración de los Datos
+
+```{r}
+#librerías utilizadas
+library(RODBC)
+library(caTools)
+library(lattice)
+library(ROCR)
+library(pROC)
+library(qcc)
+library(cluster)
+library(rpart)
+library(rpart.plot)
+
+library(randomForest)
+
+#establezca el directorio de trabajo y el origen de los datos
+dbhandle <- odbcDriverConnect('driver={SQL Server};server=JOSE;database=AdventureWorks2014_DW;trusted_connection=true')
+hechos<- sqlQuery(dbhandle, 'select * from Hechos_Production')
+datos<- sqlQuery(dbhandle, 'select * from Hechos_Production')
+
+summary(hechos)
+#Utilice la función str() para ver la estructura del conjunto de datos:
+str(hechos)
+#Dividir el conjunto de datos en uno de entrenamiento y otro de pruebas:
+set.seed(351)
+splt <- sample.split(hechos$ListPrice, SplitRatio = 0.7)
+hechos.entrenamiento <- hechos[splt,]
+hechos.prueba <- hechos[!splt,]
+
+```
+Es importante siempre validar los rangos de los conjuntos de datos creados, para evitar caer en extrapolación:
+```{r}
+summary(hechos.entrenamiento)
+
+summary(hechos.prueba)
+
+```
+Nuestra exploración creando gráficos de dispersión para ver cuál es la relación entre nuestra variable de interés (ListPrice) y el resto de las variables cuantitativas:
+
+```{r}
+par(mfrow = c(2,2)) #crear una cuadrícula de 2 columnas y 2 hileras para ver tres gráficos.
+
+plot(x = hechos.prueba$ProductWeight, y = hechos.prueba$ListPrice, main = 'Relación entre ListPrice y ProductWeight', ylab = 'ListPrice', xlab = 'ProductWeight')
+plot(x = hechos.prueba$OrderQty, y = hechos.prueba$ListPrice, main = 'Relación entre ListPrice y OrderQty', ylab = 'ListPrice', xlab = 'OrderQty')
+plot(hechos$StandartCost,hechos$ListPrice, main = 'Relación entre StandartCost y ListPrice', xlab = 'StandartCost',ylab = 'ListPrice')
+
+```
+Según las gráficas se puede mencionar que no se evidencia una relación por lo menos lineal de las variables OrderQty y ProductWeight con el ListPrice. En la relación del precio con la cantidad en la orden se visualiza un precio mayor para cantidades de producto menores (como es de esperar) y después una estabilidad en el precio para cantidades mayores a 300 unidades aproximadamente.
+
+También es importante visualizar la relación entre las diferentes variables predictoras, para lo cual podemos crear una matriz de gráficos de dispersión:
+
+```{r}
+par(mfrow = c(1,1)) #volver a solo un gráfico por visualización.
+
+pairs(hechos.prueba[!is.na(hechos.prueba$ListPrice), c(5:8)], main = 'Relación entre predictores')
+
+```
+Como es de esperar el costo y el precio tienen una relación lineal directa así queda demostrado en el gráfico siguiente.
+La información del gráfico anterior podemos complementarla con una matriz de correlación:
+
+```{r}
+
+cor(hechos.entrenamiento[!is.na(hechos.entrenamiento$ListPrice),c(5:8)])
+
+```
+Como pudimos apreciar en la matriz de gráficos de dispersión, y confirmar con la matriz de correlación, hay una correlación significativa entre las variables costo y precio, y con una relación menos marcada dias_manufactura y precio. Para evaluar el modelo utilizaremos la variable del costo que es la que presenta la mayor relación.
+## Modelo de Minería de Datos
+
+
+
+## Modelo 1 Regresión Lineal Múltiple
+
+Una vez seleccionadas las variables para incluir en el modelo de regresión, se procede a crearlo:
+
+```{r}
+
+reg.ListPrice <- lm(ListPrice ~ ProductWeight + StandartCost, data = hechos.entrenamiento)
+
+summary(reg.ListPrice)
+
+```
+
+En el resumen del modelo, podemos ver que ambas variables son significativas y que el modelo creado explica alrededor de un 97.3% de la variación en la variable de respuesta (ListPrice). Con este modelo, procedemos a hacer las predicciones sobre el conjunto de datos de prueba.
+
+```{r}
+hechos.prueba$Prediccion <- predict(reg.ListPrice, newdata = hechos.prueba)
+summary(hechos.prueba$Prediccion)
+
+```
+
+## Evaluación
+
+Para determinar qué tan bueno es el modelo, vamos a calcular dos métricas: primero la raíz cuadrada del promedio de los errores cuadrados (RMSE):
+
+```{r}
+sqrt(mean((hechos.prueba$ListPrice - hechos.prueba$Prediccion)^2))
+
+```
+
+También es necesario calcular el r cuadrado:
+
+```{r}
+
+Suma.Total.Cuadrados <- sum((mean(hechos.entrenamiento$ListPrice) - hechos.prueba$ListPrice)^2) #error total si usamos modelo ingenuo en prueba
+Suma.Errores.Cuadrados <- sum((hechos.prueba$Prediccion - hechos.prueba$ListPrice)^2) #error total de nuestro modelo en prueba
+1 - (Suma.Errores.Cuadrados / Suma.Total.Cuadrados)  
+
+```
+
+Finalmente, procedemos a analizar la distribución de los residuos:
+
+```{r}
+
+hist(hechos.prueba$ListPrice - hechos.prueba$Prediccion, 
+     breaks = 50,
+     main = 'Distribución de los Residuos en Prueba',
+     xlab = 'residuos')
+
+plot(y = hechos.prueba$ListPrice - hechos.prueba$Prediccion,
+     x = hechos.prueba$ListPrice,
+     main = 'Distribución de los residuos por ListPrice',
+     xlab = 'ListPrice',
+     ylab = 'residuos')
+
+```
+
+
+## Resultados
+
+De acuerdo con la evaluación hecha, el modelo inicia con muy buenos números: puede explicar cerca de un 97% de la variación de la variable ListPrice en el conjunto de datos de prueba, y el error promedio es de alrededor de $120.4  para arriba o para abajo. Sin embargo, el análisis de los residuos nos deja ver que hay un patrón no aleatorio para valores altos de ListPrice, específicamente para valores mayores a 500. A partir de este número, los residuos tienen un comportamiento más volátil e indefinido
+
+El modelo puede utilizarse para aproximar pero sería consejable segmentar los productos para identificar características particulares.
+
+
+
+##Modelo 2 Agrupamiento
+
+#Análisis del Problema
+
+Agrupamiento por subcategoria, se pretende analizar si en precio estandar de un producto es constante o parejo en una subcategoria o si varia, con el fin de ajustar mas las subcategorias para estimar mejor los costos de producción de estos productos.por ejemplo si en la fabrica se produce jabón de baño y jabón para mano el cual puede ser similar en su precio final y costo de producción, se pretende verificar que en esta subcategoria no se produzcan lavadoras que tiene que ver con limpieza pero aumenta los costos de producción, la lavadora requiere de abrir otra subcategoria que en vez de artículos de limpieza se llame linea blanca o similar. 
+
+#Entendimiento de los Datos
+
+Para intentar resolver este problema, se cuenta con un conjunto de datos con tres variables:
+
+StandartCost: cuantitativa, da el costo estandar de cada producto.
+ListPrice: cuantitativa, da el precio estandar de consumidor final.
+ProductSubCategoryID: cualitativa, representa una categoria segun el número ejemplo, 1 = Limpieza.
+
+##Normalizar las primeras dos columnas entre 0 y 1:
+
+```{r}
+datos$StandartCost <- (datos$StandartCost - min(datos$StandartCost)) / (max(datos$StandartCost) - min(datos$StandartCost))
+datos$ListPrice <- (datos$ListPrice - min(datos$ListPrice)) / (max(datos$ListPrice) - min(datos$ListPrice))
+
+```
+
+
+Luego de cargar los datos, podemos comparar la cantidad de observaciones que hay por Subcategoria:
+
+```{r}
+barplot(table(datos$ProductSubCategoryID),
+        main = 'Cantidad de observaciones por ProductSubCategoryID',
+        xlab = 'Subcategorías',
+        ylab = 'Transacciones')
+
+```
+
+Se puede analizar también la relación que hay entre las variables Costo y precio de lista:
+
+```{r}
+
+plot(datos$StandartCost, 
+     datos$ListPrice,
+     main = 'Relación entre StandartCost y ListPrice',
+     xlab = 'StandartCost',
+     ylab = 'ListPrice')
+
+```
+     
+     
+Como se puede apreciar, hay una relación casi lineal (hay una tendencia a formar un arco) entre ambas variables, y se puede sacar la conclusión que a mayor costo, mayor precio final (y viceversa).
+
+Finalmente, podemos observar la distribución de costo por Subcategoria:
+
+```{r}
+
+
+boxplot(datos$StandartCost ~ factor(datos$ProductSubCategoryID), 
+     main = 'Relación entre StandartCost y ProductSubCategoryID',
+     xlab = 'ProductSubCategoryID',
+     ylab = 'StandartCost')
+     
+```
+     
+y la distribución de precio de lista por Subcategoria:
+
+```{r}
+
+boxplot(datos$ListPrice ~ factor(datos$ProductSubCategoryID), 
+     main = 'Relación entre ListPrice y ProductSubCategoryID',
+     xlab = 'ProductSubCategoryID',
+     ylab = 'ListPrice')
+
+```
+     
+     
+En estos dos gráficos se puede apreciar que en promedio ambos precios estan muy parecidos y ninguno se sobresale de su subcategoria.
+
+#Creación del Modelo
+
+Para determinar la cantidad de clústeres que se pueden crear, se procede a hacer un agrupamiento jerárquico:
+
+```{r}
+
+set.seed(351)
+splt <- sample.split(datos$ProductSubCategoryID, SplitRatio = 0.9995)
+datos.entrenamiento <- datos[splt,]
+prueba <- datos[!splt,]
+
+
+distancias <- dist(prueba, method="euclidean")
+
+prueba.jerarquico <- hclust(distancias, method="ward.D")
+
+plot(prueba.jerarquico)
+
+```
+
+Determinando las diferentes alturas, se pueden crear desde 2 grupos hasta 6. En realidad, ya la división en 5 ó 6 grupos es un poco "estrecha", pero definitiamente para más de 6 grupos la división es sumamente difícil de hacer. Para este análisis, vamos a utilizar 5
+
+```{r}
+
+plot(prueba.jerarquico)
+rect.hclust(prueba.jerarquico, k = 2, border = "red")
+rect.hclust(prueba.jerarquico, k = 5, border = "red")
+
+```
+
+
+```{r}
+
+cluster.jerarquico <- factor(cutree(prueba.jerarquico, k=5))
+
+```
+Luego de hacer el análisis jerárquico, se procede a hacer el análisis utilizando el algoritmo KMeans con 5 centros:
+
+```{r}
+
+set.seed(352345) #necesario para replicabilidad
+km <- kmeans(prueba, centers = 5)
+cluster.kmeans <- factor(km$cluster)
+
+```
+
+
+El resultado se puede visualizar así: (Los colores de los puntos representan el grupo al cual pertenecen)
+
+#Visualizar los Clústeres
+
+```{r}
+clusplot(prueba, 
+         km$cluster, 
+         col.p = km$cluster,
+         color=TRUE, 
+         shade=TRUE, 
+         labels=2, 
+         lines=0,
+         main = 'Visualización de los Clústeres')
+
+```
+
+#Evaluación
+
+Con el fin de comparar ambos agrupamientos, podemos generar tablas resumen para comparar los valores promedios de cada variable en cada grupo:
+
+```{r}
+resultado.jerarquico <- rbind(tapply(prueba$StandartCost, cluster.jerarquico, mean),
+                              tapply(prueba$ListPrice, cluster.jerarquico, mean),
+                              tapply(prueba$ProductSubCategoryID, cluster.jerarquico, mean))
+
+rownames(resultado.jerarquico) <- c('StandartCost', 'ListPrice', 'ProductSubCategoryID')
+
+resultado.jerarquico
+
+```
+
+```{r}
+
+resultado.kmeans <- rbind(tapply(prueba$StandartCost, cluster.kmeans, mean),
+                              tapply(prueba$ListPrice, cluster.kmeans, mean),
+                              tapply(prueba$ProductSubCategoryID, cluster.kmeans, mean))
+
+rownames(resultado.kmeans) <- c('StandartCost', 'ListPrice', 'ProductSubCategoryID')
+
+resultado.kmeans
+
+
+```
+
+#Resultados
+
+De los resúmenes anteriores, podemos sacar la conclusión que con los datos de Costo y precio final normalizados, y con el subcategoria, independientemente del algoritmo de agrupamiento (jerárquico o KMeans), los resultados son basicamente los mismos. Si bien es cierto que el número de grupo puede variar, en general podemos observar que en las subcategorias los costos andan semejantes y sus precios finales tambien, se descata algún dato de costo excesivo en un producto.
+
+Ambos modelos dan resultados sumamente válidos para cualquiera de las dos perspectivas mencionadas en el análisis del problema.
+
+
+
+##Modelo 3 Árboles aleatorios
+
+#Análisis del Problema
+Para poder tomar decisiones acertadas y conociendo las muchas diferencias que podemos encontrar en los productos y el gran número de productos se vuelve importante considerar algún criterio de clasificación para cada producto. Actualmente se cuenta con una categorización y subcategorización. Llo que se busca es verificar si las caracteristicas de interés son determinantes en la manera que se designan esas categorías
+
+#Exploración de los datos
+Se busca validar la relación del precio con la subcategoría y las demás características de la subcategoría como lo pueden ser: el peso, el costo, los días de manufactura y la cantidad en cada orden
+
+```{r fig.height = 3.5}
+boxplot( ProductWeight~ ProductSubCategoryID,
+        data = hechos.entrenamiento,
+        main = 'Distribución del Peso por Subcategoría',
+        xlab = 'Subcategoría',
+        ylab = 'Peso')
+boxplot( ListPrice~ ProductSubCategoryID,
+        data = hechos.entrenamiento,
+        main = 'Distribución del Precio por Subcategoría',
+        xlab = 'Subcategoría',
+        ylab = 'Precio')
+
+boxplot( StandartCost~ ProductSubCategoryID,
+        data = hechos.entrenamiento,
+        main = 'Distribución del Costo por Subcategoría',
+        xlab = 'Subcategoría',
+        ylab = 'Costo')
+
+boxplot( DaysToManufacture~ ProductSubCategoryID,
+        data = hechos.entrenamiento,
+        main = 'Distribución de los días de manufactura  por Subcategoría',
+        xlab = 'Subcategoría',
+        ylab = 'Días de manufactura')
+
+```
+#Modelo de los datos
+
+Alternativamente, se va a crear también un bosque aleatorio:
+
+```{r}
+set.seed(4527)
+modelo.bosque <- randomForest(ProductSubCategoryID ~ .,
+                              ntrees = 15,
+                              data = hechos.entrenamiento)
+
+predicciones.bosque <- predict(modelo.bosque, newdata = hechos.prueba, type = 'class')
+
+```
+
+
+
+## Evaluación
+
+Debido a que la variable SucategoryID tiene 17 posibles valores, la evaluación de los modelos se va a centrar en la métrica *exactitud*:
+
+El modelo de árbol de decisión clasificó correctamente 44743 observaciones de 44749, para una exactitud del 99.98%.
+
+```{r}
+table(hechos.prueba$ProductSubCategoryID, predicciones.bosque)
+
+```
+
+El bosque aleatorio clasificó correctamente 44746 observaciones de 44749, para una exactitud del 99.99%.
+
+## Resultados
+
+En general, ambos modelos presentan muy buen desempeño, con exactitudes por encima del 99%. Sin embargo el bosque aleatorio tiene una exactitud mayor. Se puede concluir que el caso se presta bastante para un modelo de clasificación, el cual podría ser útil en diferentes escenarios.
